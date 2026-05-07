@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /leaderboard/{doc} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['player_name','score','flags_collected','defeated_boss','created_at'])
+        && request.resource.data.player_name is string
+        && request.resource.data.player_name.size() >= 1
+        && request.resource.data.player_name.size() <= 20
+        && request.resource.data.score is int
+        && request.resource.data.score >= 0
+        && request.resource.data.score <= 99999
+        && request.resource.data.flags_collected is int
+        && request.resource.data.flags_collected >= 0
+        && request.resource.data.flags_collected <= 5
+        && request.resource.data.defeated_boss is bool
+        && request.resource.data.created_at is timestamp;
+      allow update, delete: if false;
+    }
+  }
+}
