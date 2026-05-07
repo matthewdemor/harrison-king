@@ -26,12 +26,14 @@ export default function Home() {
       <Cloud variant={2} />
       <Cloud variant={3} />
 
-      <Hero />
-      <MeetHarry />
-      <FavoriteThings />
-      <WhyCool />
-      <SuperDogWorld />
-      <Leaderboard />
+      <main>
+        <Hero />
+        <MeetHarry />
+        <FavoriteThings />
+        <WhyCool />
+        <SuperDogWorld />
+        <Leaderboard />
+      </main>
       <div className="grass-strip" />
       <Footer />
       <InstallPrompt />
