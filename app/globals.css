@@ -72,22 +72,26 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+html {
+  overflow-x: clip;
+}
+
 html, body {
   font-family: var(--font-hand);
   background: var(--color-cream);
   color: var(--color-ink);
-  overflow-x: hidden;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
 }
 
 body {
+  position: relative;
+  overflow-x: clip;
   background:
     radial-gradient(circle at 80% 20%, rgba(255, 224, 102, 0.35) 0%, transparent 40%),
     linear-gradient(180deg, var(--color-peach-light) 0%, var(--color-peach) 30%, var(--color-sky) 70%, var(--color-sky-deep) 100%);
   min-height: 100vh;
   min-height: 100dvh;
-  overscroll-behavior: none;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -134,9 +138,13 @@ body {
   border-radius: 16px;
   image-rendering: -webkit-optimize-contrast;
   image-rendering: crisp-edges;
-  touch-action: none;
+  touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.game-canvas.is-playing {
+  touch-action: none;
 }
 
 /* Hero text stroke */

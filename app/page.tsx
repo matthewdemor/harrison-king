@@ -1,14 +1,22 @@
 import { Hero } from "@/components/Hero";
 import { MeetHarry } from "@/components/MeetHarry";
+import { HarryStats } from "@/components/HarryStats";
+import { PlayCTA } from "@/components/PlayCTA";
 import { FavoriteThings } from "@/components/FavoriteThings";
+import { SportsCards } from "@/components/SportsCards";
+import { BYUAccordion } from "@/components/BYUAccordion";
+import { JokeMachine } from "@/components/JokeMachine";
+import { DogFacts } from "@/components/DogFacts";
+import { BikeTricks } from "@/components/BikeTricks";
+import { BeachChecklist } from "@/components/BeachChecklist";
+import { BadgeWall } from "@/components/BadgeWall";
+import { WouldYouRather } from "@/components/WouldYouRather";
 import { WhyCool } from "@/components/WhyCool";
-import { SuperDogWorld } from "@/components/SuperDogWorld";
-import { Leaderboard } from "@/components/Leaderboard";
 import { Footer } from "@/components/Footer";
 import { InstallPrompt } from "@/components/InstallPrompt";
 import { Cloud } from "@/components/Cloud";
 
-export const revalidate = 30;
+export const revalidate = 60;
 
 export default function Home() {
   return (
@@ -28,11 +36,19 @@ export default function Home() {
 
       <main>
         <Hero />
+        <HarryStats />
         <MeetHarry />
+        <PlayCTA />
         <FavoriteThings />
+        <SportsCards />
+        <BYUAccordion />
+        <JokeMachine />
+        <DogFacts />
+        <BikeTricks />
+        <BeachChecklist />
+        <BadgeWall />
+        <WouldYouRather />
         <WhyCool />
-        <SuperDogWorld />
-        <Leaderboard />
       </main>
       <div className="grass-strip" />
       <Footer />

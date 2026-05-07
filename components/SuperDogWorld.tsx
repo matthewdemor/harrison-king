@@ -207,7 +207,7 @@ export function SuperDogWorld() {
             ref={canvasRef}
             width={W}
             height={H}
-            className="game-canvas"
+            className={`game-canvas${phase === "playing" ? " is-playing" : ""}`}
           />
 
           {phase !== "playing" && (
