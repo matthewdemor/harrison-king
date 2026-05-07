@@ -9,8 +9,17 @@ import type { GameState, Keys } from "@/lib/game/types";
 
 type Phase = "title" | "playing" | "win" | "lose" | "submitted";
 
+type FsDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void>;
+};
+type FsElement = HTMLDivElement & {
+  webkitRequestFullscreen?: () => Promise<void>;
+};
+
 export function SuperDogWorld() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<GameState>(createInitialState());
   const keysRef = useRef<Keys>({});
   const rafRef = useRef<number | null>(null);
@@ -22,6 +31,46 @@ export function SuperDogWorld() {
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isFs, setIsFs] = useState(false);
+  const [cssFs, setCssFs] = useState(false);
+
+  const requestFullscreen = useCallback(async () => {
+    const el = cardRef.current as FsElement | null;
+    if (!el) return;
+    const fn = el.requestFullscreen ?? el.webkitRequestFullscreen;
+    if (typeof fn === "function") {
+      try {
+        await fn.call(el);
+        // Try to lock landscape — silently fails on browsers/devices that don't allow it.
+        const orientation = (screen.orientation as ScreenOrientation & {
+          lock?: (o: string) => Promise<void>;
+        } | undefined);
+        if (orientation && typeof orientation.lock === "function") {
+          orientation.lock("landscape").catch(() => undefined);
+        }
+        return;
+      } catch {
+        /* fall through to CSS fallback */
+      }
+    }
+    setCssFs(true);
+  }, []);
+
+  const exitFullscreen = useCallback(async () => {
+    setCssFs(false);
+    const doc = document as FsDocument;
+    if (doc.fullscreenElement && typeof document.exitFullscreen === "function") {
+      try { await document.exitFullscreen(); } catch {}
+    } else if (doc.webkitFullscreenElement && typeof doc.webkitExitFullscreen === "function") {
+      try { await doc.webkitExitFullscreen(); } catch {}
+    }
+    const orientation = screen.orientation as ScreenOrientation & {
+      unlock?: () => void;
+    } | undefined;
+    if (orientation && typeof orientation.unlock === "function") {
+      try { orientation.unlock(); } catch {}
+    }
+  }, []);
 
   const setPhaseSync = useCallback((p: Phase) => {
     phaseRef.current = p;
@@ -40,6 +89,7 @@ export function SuperDogWorld() {
     stateRef.current = createInitialState();
     setPhaseSync("playing");
     lastTimeRef.current = performance.now();
+    void requestFullscreen();
 
     const loop = (t: number) => {
       const dt = t - lastTimeRef.current;
@@ -103,6 +153,27 @@ export function SuperDogWorld() {
   }, []);
 
   useEffect(() => () => stopLoop(), [stopLoop]);
+
+  useEffect(() => {
+    const sync = () => {
+      const doc = document as FsDocument;
+      const native = !!(document.fullscreenElement || doc.webkitFullscreenElement);
+      setIsFs(native);
+      if (!native) setCssFs(false);
+    };
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("webkitfullscreenchange", sync);
+    return () => {
+      document.removeEventListener("fullscreenchange", sync);
+      document.removeEventListener("webkitfullscreenchange", sync);
+    };
+  }, []);
+
+  const fullscreenActive = isFs || cssFs;
+
+  const handleExitFullscreen = useCallback(() => {
+    void exitFullscreen();
+  }, [exitFullscreen]);
 
   const submitScore = useCallback(async () => {
     setSubmitting(true);
@@ -172,9 +243,21 @@ export function SuperDogWorld() {
   return (
     <section className="px-4 py-10 sm:py-20 sm:px-2">
       <div
-        className="game-card max-w-[900px] mx-auto bg-ink border-[5px] border-ink rounded-[24px] p-4 sm:p-3"
+        ref={cardRef}
+        className={`game-card max-w-[900px] mx-auto bg-ink border-[5px] border-ink rounded-[24px] p-4 sm:p-3${cssFs ? " css-fullscreen" : ""}`}
         style={{ boxShadow: "var(--shadow-ink-lg)" }}
       >
+        {fullscreenActive && (
+          <button
+            type="button"
+            onClick={handleExitFullscreen}
+            className="fs-exit-btn"
+            aria-label="Exit fullscreen"
+            title="Exit fullscreen"
+          >
+            ✕
+          </button>
+        )}
         <div className="text-center mb-3">
           <div
             className="font-display text-sun text-stroke-ink leading-none"
@@ -202,7 +285,7 @@ export function SuperDogWorld() {
           </div>
         </div>
 
-        <div className="relative">
+        <div className="relative game-wrapper">
           <canvas
             ref={canvasRef}
             width={W}
