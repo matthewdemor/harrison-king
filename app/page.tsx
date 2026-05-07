@@ -2,6 +2,7 @@ import { Hero } from "@/components/Hero";
 import { MeetHarry } from "@/components/MeetHarry";
 import { HarryStats } from "@/components/HarryStats";
 import { PlayCTA } from "@/components/PlayCTA";
+import { PhotoGallery } from "@/components/PhotoGallery";
 import { FavoriteThings } from "@/components/FavoriteThings";
 import { SportsCards } from "@/components/SportsCards";
 import { BYUAccordion } from "@/components/BYUAccordion";
@@ -38,6 +39,7 @@ export default function Home() {
         <Hero />
         <HarryStats />
         <MeetHarry />
+        <PhotoGallery />
         <PlayCTA />
         <FavoriteThings />
         <SportsCards />
