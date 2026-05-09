@@ -152,17 +152,27 @@ export function update(state: GameState, dtRaw: number, keys: Keys, events: Engi
     }
   }
 
-  // Heart Word Stone collection — by player overlap or hat hit.
+  // Heart Word Stone collection — by player overlap or hat hit. Seamless: no pause,
+  // no modal. Engine marks the stone collected, fires sparkles + a floating ghost
+  // word, then notifies React so it can speak the word aloud.
   for (const s of state.heartStones) {
     if (s.collected) continue;
-    if (rectOverlap(player, s)) {
+    const playerHit = rectOverlap(player, s);
+    const hatHit = hat.active && circleRectHit(hat.x, hat.y, 18, s);
+    if (playerHit || hatHit) {
+      s.collected = true;
+      state.collectedWords[s.word] = true;
+      spawnParticles(state, s.x + s.w / 2, s.y + s.h / 2, 18, "#FFE066");
+      spawnParticles(state, s.x + s.w / 2, s.y + s.h / 2, 14, "#E97AC1");
+      state.wordGhosts.push({
+        x: s.x + s.w / 2,
+        y: s.y - 12,
+        word: s.word,
+        life: 70,
+        maxLife: 70,
+      });
+      if (hatHit) hat.returning = true;
       events.onHeartStone?.(s);
-      return;
-    }
-    if (hat.active && circleRectHit(hat.x, hat.y, 18, s)) {
-      hat.returning = true;
-      events.onHeartStone?.(s);
-      return;
     }
   }
 
@@ -300,6 +310,13 @@ export function update(state: GameState, dtRaw: number, keys: Keys, events: Engi
     p.y += p.vy;
     p.vy += 0.3;
     p.life--;
+  }
+
+  // Ghost-word feedback (the floating word that rises after collection).
+  state.wordGhosts = state.wordGhosts.filter((g) => g.life > 0);
+  for (const g of state.wordGhosts) {
+    g.y -= 0.7;
+    g.life--;
   }
 
   if (player.y > H + 100) hurtPlayer(state, events, true);

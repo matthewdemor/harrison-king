@@ -2,31 +2,31 @@ import { GROUND_Y, WORLD_W } from "./constants";
 import type { Cat, GameState, HeartStone } from "./types";
 import { HEART_WORDS } from "@/lib/words/heart-words";
 
-// Twenty stones spread across the world (x = 0..2480), so the player walks past
-// each one on the way to the owl gate at x≈2550 (boss arena starts around 2700).
-// Heights vary: some on the ground, some perched on platforms, some on the snowy
-// caps of dog mountains so the kid has to look up.
+// Twenty unique words evenly distributed across the reachable world (x≈100..2400).
+// Each x-slot is at least ~100px from its neighbors, and heights alternate between
+// open ground, platform tops, and mountain peaks so no two stones look duplicated
+// next to each other. The 120px buffer on the right keeps stones clear of the owl.
 const STONE_PLACEMENTS: Array<{ x: number; y: number }> = [
-  { x: 160, y: GROUND_Y - 30 },        // 0  the
-  { x: 320, y: 260 },                  // 1  a       (on platform 280-390)
-  { x: 460, y: GROUND_Y - 30 },        // 2  I
-  { x: 540, y: 200 },                  // 3  to      (on platform 480-590)
-  { x: 660, y: GROUND_Y - 30 },        // 4  is
-  { x: 760, y: 260 },                  // 5  you     (on platform 720-830)
-  { x: 980, y: GROUND_Y - 30 },        // 6  are
-  { x: 1140, y: 220 },                 // 7  of      (on platform 1100-1230)
-  { x: 1280, y: 250 },                 // 8  was     (on dog mountain peak)
-  { x: 1490, y: 170 },                 // 9  said    (on platform 1450-1560)
-  { x: 1610, y: GROUND_Y - 30 },       // 10 they
-  { x: 1750, y: 250 },                 // 11 have    (on platform 1700-1830)
-  { x: 1880, y: GROUND_Y - 30 },       // 12 my
-  { x: 2090, y: 210 },                 // 13 do      (on platform 2050-2170)
-  { x: 2200, y: 250 },                 // 14 what    (on dog mountain peak)
-  { x: 2330, y: 150 },                 // 15 there   (on platform 2300-2420)
-  { x: 2440, y: GROUND_Y - 30 },       // 16 were
-  { x: 2540, y: GROUND_Y - 30 },       // 17 one
-  { x: 2620, y: 250 },                 // 18 by      (on platform 2600-2710)
-  { x: 250,  y: 200 },                 // 19 from    (extra stone reachable on return)
+  { x: 120,  y: GROUND_Y - 36 },        // 0  the    — ground
+  { x: 240,  y: GROUND_Y - 36 },        // 1  a      — ground
+  { x: 340,  y: 254 },                  // 2  I      — platform 280-390
+  { x: 460,  y: GROUND_Y - 36 },        // 3  to     — ground
+  { x: 560,  y: 194 },                  // 4  is     — platform 480-590
+  { x: 680,  y: GROUND_Y - 36 },        // 5  you    — ground (past mountain at 600)
+  { x: 800,  y: 254 },                  // 6  are    — platform 720-830
+  { x: 940,  y: GROUND_Y - 36 },        // 7  of     — ground
+  { x: 1080, y: GROUND_Y - 36 },        // 8  was    — ground
+  { x: 1200, y: 214 },                  // 9  said   — platform 1100-1230
+  { x: 1320, y: 244 },                  // 10 they   — mountain peak (apex ~1330)
+  { x: 1440, y: GROUND_Y - 36 },        // 11 have   — ground
+  { x: 1560, y: 164 },                  // 12 my     — platform 1450-1560
+  { x: 1680, y: GROUND_Y - 36 },        // 13 do     — ground
+  { x: 1800, y: 244 },                  // 14 what   — platform 1700-1830
+  { x: 1940, y: GROUND_Y - 36 },        // 15 there  — ground
+  { x: 2080, y: 204 },                  // 16 were   — platform 2050-2170
+  { x: 2240, y: 244 },                  // 17 one    — mountain peak (apex ~2250)
+  { x: 2340, y: 144 },                  // 18 by     — platform 2300-2420 (high)
+  { x: 2400, y: GROUND_Y - 36 },        // 19 from   — ground (140px buffer to owl)
 ];
 
 export function createInitialState(): GameState {
@@ -111,5 +111,6 @@ export function createInitialState(): GameState {
     },
     gateOpen: false,
     paused: false,
+    wordGhosts: [],
   };
 }

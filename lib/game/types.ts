@@ -71,6 +71,14 @@ export type Owl = {
   triggered: boolean;
 };
 
+export type WordGhost = {
+  x: number;
+  y: number;
+  word: string;
+  life: number;
+  maxLife: number;
+};
+
 export type GameState = {
   camera: Camera;
   player: Player;
@@ -89,6 +97,7 @@ export type GameState = {
   owl: Owl;
   gateOpen: boolean;
   paused: boolean;
+  wordGhosts: WordGhost[];
 };
 
 export type LabelKind =

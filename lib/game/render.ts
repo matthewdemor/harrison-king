@@ -815,6 +815,25 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState, opts: Re
     ctx.globalAlpha = 1;
   }
 
+  // Floating "you got the word!" feedback that rises and fades.
+  for (const g of state.wordGhosts) {
+    const t = 1 - g.life / g.maxLife;
+    const scale = 1 + t * 0.6;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, g.life / g.maxLife);
+    ctx.translate(g.x, g.y);
+    ctx.scale(scale, scale);
+    ctx.font = "bold 22px 'Bagel Fat One', system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "#2D3142";
+    ctx.strokeText(g.word, 0, 0);
+    ctx.fillStyle = "#FFE066";
+    ctx.fillText(g.word, 0, 0);
+    ctx.restore();
+  }
+
   if (state.boss.defeated) {
     ctx.fillStyle = "#FFE066";
     ctx.font = 'bold 40px "Bagel Fat One", cursive';

@@ -13,7 +13,6 @@ import {
 import type { GameState, HeartStone, Keys } from "@/lib/game/types";
 import { HEART_WORDS, HEART_WORD_COUNT } from "@/lib/words/heart-words";
 import { attachVoiceLoader, ensureSpeechUnlocked, speak } from "@/lib/audio/speak";
-import { HeartWordCard } from "./HeartWordCard";
 import { HeartWordGate } from "./HeartWordGate";
 import { SettingsToggles } from "./SettingsToggles";
 
@@ -26,11 +25,6 @@ type FsDocument = Document & {
 type FsElement = HTMLDivElement & {
   webkitRequestFullscreen?: () => Promise<void>;
 };
-
-type ActiveCard =
-  | { kind: "heart"; stone: HeartStone }
-  | { kind: "label"; word: string }
-  | null;
 
 const LABELS_KEY = "hk-game-labels-on";
 const SPEECH_KEY = "hk-game-speech-on";
@@ -76,7 +70,6 @@ export function SuperDogWorld() {
   const [speechOn, setSpeechOn] = useState<boolean>(true);
   const labelsOnRef = useRef(true);
   const speechOnRef = useRef(true);
-  const [activeCard, setActiveCard] = useState<ActiveCard>(null);
   const [gateUiOpen, setGateUiOpen] = useState(false);
   const [, setTickWords] = useState(0);
 
@@ -159,53 +152,34 @@ export function SuperDogWorld() {
   }, []);
 
   const triggerHeartStone = useCallback((stone: HeartStone) => {
-    setPaused(true);
-    setActiveCard({ kind: "heart", stone });
-  }, [setPaused]);
+    // Engine already marked the stone collected, spawned sparkles, and pushed a
+    // ghost word. We just speak it and bump the word counter — gameplay continues.
+    speak(stone.word, { enabled: speechOnRef.current });
+    setTickWords((n) => n + 1);
+  }, []);
 
   const triggerOwl = useCallback(() => {
     setPaused(true);
     setGateUiOpen(true);
   }, [setPaused]);
 
-  const closeHeartCard = useCallback(() => {
-    setActiveCard((current) => {
-      if (current?.kind === "heart") {
-        const stone = current.stone;
-        // Mark collected + register the word
-        const live = stateRef.current.heartStones.find((s) => s.id === stone.id);
-        if (live && !live.collected) {
-          live.collected = true;
-          stateRef.current.collectedWords[live.word] = true;
-          // Sparkle particles via direct push (engine spawnParticles imported via state mutation)
-          for (let i = 0; i < 16; i++) {
-            stateRef.current.particles.push({
-              x: live.x + live.w / 2,
-              y: live.y + live.h / 2,
-              vx: (Math.random() - 0.5) * 6,
-              vy: (Math.random() - 0.5) * 6 - 2,
-              life: 36 + Math.random() * 16,
-              color: i % 2 === 0 ? "#FFE066" : "#E97AC1",
-              size: 3 + Math.random() * 4,
-            });
-          }
-          setTickWords((n) => n + 1);
-        }
-      }
-      return null;
+  const speakLabel = useCallback((word: string, x: number, y: number) => {
+    speak(word, { enabled: speechOnRef.current });
+    // Floating ghost word above the entity for visual confirmation, no modal.
+    stateRef.current.wordGhosts.push({
+      x,
+      y,
+      word,
+      life: 60,
+      maxLife: 60,
     });
-    setPaused(false);
-  }, [setPaused]);
-
-  const closeLabelCard = useCallback(() => {
-    setActiveCard(null);
-    setPaused(false);
-  }, [setPaused]);
+  }, []);
 
   const closeGate = useCallback(() => {
     setGateUiOpen(false);
-    // Reset trigger so player can re-approach owl
-    stateRef.current.owl.triggered = false;
+    // IMPORTANT: do not reset owl.triggered here — the engine clears it once the
+    // player has walked ≥240px away. Resetting here would re-fire the gate every
+    // frame because the player is still standing right next to the owl.
     setPaused(false);
   }, [setPaused]);
 
@@ -230,7 +204,6 @@ export function SuperDogWorld() {
 
   const startGame = useCallback(() => {
     setSubmitError(null);
-    setActiveCard(null);
     setGateUiOpen(false);
     stateRef.current = createInitialState();
     setPhaseSync("playing");
@@ -298,23 +271,20 @@ export function SuperDogWorld() {
       if (e.code === "KeyF" || e.code === "KeyX") engineThrowHat(stateRef.current);
       if (e.code === "Space" || e.code === "ArrowUp") engineTryJump(stateRef.current);
       if (e.code === "KeyE") {
-        // Speak the word for whatever is closest to the player
+        // Speak the word for whatever is closest to the player — non-modal.
         const state = stateRef.current;
         const targets = getLabelTargets(state);
         const px = state.player.x + state.player.w / 2;
         const py = state.player.y + state.player.h / 2;
-        let best = null as null | { word: string; d: number };
+        let best = null as null | { word: string; x: number; y: number; d: number };
         for (const lt of targets) {
           if (lt.kind === "dog") continue;
           const tx = lt.x + lt.w / 2;
           const ty = lt.y + lt.h / 2;
           const d = Math.hypot(tx - px, ty - py);
-          if (!best || d < best.d) best = { word: lt.word, d };
+          if (!best || d < best.d) best = { word: lt.word, x: tx, y: lt.y, d };
         }
-        if (best) {
-          setPaused(true);
-          setActiveCard({ kind: "label", word: best.word });
-        }
+        if (best) speakLabel(best.word, best.x, best.y);
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -414,7 +384,7 @@ export function SuperDogWorld() {
     engineThrowHat(stateRef.current);
   };
 
-  /** Detect taps on labelable entities (translates click→world coords, finds the topmost target). */
+  /** Tap a stone or any labeled entity → seamless speak + ghost word. No modal. */
   const onCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     if (phaseRef.current !== "playing") return;
     if (stateRef.current.paused) return;
@@ -431,22 +401,19 @@ export function SuperDogWorld() {
     for (const s of stateRef.current.heartStones) {
       if (s.collected) continue;
       if (worldX >= s.x - 6 && worldX <= s.x + s.w + 6 && worldY >= s.y - 28 && worldY <= s.y + s.h) {
-        setPaused(true);
-        setActiveCard({ kind: "label", word: s.word });
+        speakLabel(s.word, s.x + s.w / 2, s.y);
         return;
       }
     }
     if (!labelsOnRef.current) return;
-    // Test labelable entities
     const targets = getLabelTargets(stateRef.current);
     for (const lt of targets) {
       if (worldX >= lt.x && worldX <= lt.x + lt.w && worldY >= lt.y && worldY <= lt.y + lt.h) {
-        setPaused(true);
-        setActiveCard({ kind: "label", word: lt.word });
+        speakLabel(lt.word, lt.x + lt.w / 2, lt.y);
         return;
       }
     }
-  }, [setPaused]);
+  }, [speakLabel]);
 
   const state = stateRef.current;
   const collectedCount = HEART_WORDS.filter((w) => state.collectedWords[w]).length;
@@ -517,21 +484,6 @@ export function SuperDogWorld() {
             onPointerDown={onCanvasPointerDown}
           />
 
-          {activeCard?.kind === "heart" && (
-            <HeartWordCard
-              word={activeCard.stone.word}
-              speechEnabled={speechOn}
-              onClose={closeHeartCard}
-            />
-          )}
-          {activeCard?.kind === "label" && (
-            <HeartWordCard
-              word={activeCard.word}
-              autoDismiss
-              speechEnabled={speechOn}
-              onClose={closeLabelCard}
-            />
-          )}
           {gateUiOpen && (
             <HeartWordGate
               collected={state.collectedWords}
@@ -541,7 +493,7 @@ export function SuperDogWorld() {
             />
           )}
 
-          {phase !== "playing" && !activeCard && !gateUiOpen && (
+          {phase !== "playing" && !gateUiOpen && (
             <div
               className="absolute inset-0 bg-ink/85 flex flex-col justify-center items-center text-white text-center rounded-[13px] p-5 z-10"
             >
