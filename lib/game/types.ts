@@ -52,6 +52,25 @@ export type Platform = {
 
 export type Camera = { x: number };
 
+export type HeartStone = {
+  id: string;
+  word: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  collected: boolean;
+  pulse: number;
+};
+
+export type Owl = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  triggered: boolean;
+};
+
 export type GameState = {
   camera: Camera;
   player: Player;
@@ -65,6 +84,31 @@ export type GameState = {
   flags: Flag[];
   boss: Boss;
   particles: Particle[];
+  heartStones: HeartStone[];
+  collectedWords: Record<string, boolean>;
+  owl: Owl;
+  gateOpen: boolean;
+  paused: boolean;
+};
+
+export type LabelKind =
+  | "dog"
+  | "cat"
+  | "boss"
+  | "hat"
+  | "flag"
+  | "mountain"
+  | "owl"
+  | "sun"
+  | "cloud";
+
+export type LabelTarget = {
+  kind: LabelKind;
+  word: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 };
 
 export type Keys = Record<string, boolean>;
@@ -72,4 +116,6 @@ export type Keys = Record<string, boolean>;
 export type EngineEvents = {
   onWin?: () => void;
   onLose?: () => void;
+  onHeartStone?: (stone: HeartStone) => void;
+  onOwl?: () => void;
 };

@@ -4,8 +4,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { H, W } from "@/lib/game/constants";
 import { createInitialState } from "@/lib/game/state";
 import { render } from "@/lib/game/render";
-import { throwHat as engineThrowHat, tryJump as engineTryJump, update as engineUpdate } from "@/lib/game/engine";
-import type { GameState, Keys } from "@/lib/game/types";
+import {
+  getLabelTargets,
+  throwHat as engineThrowHat,
+  tryJump as engineTryJump,
+  update as engineUpdate,
+} from "@/lib/game/engine";
+import type { GameState, HeartStone, Keys } from "@/lib/game/types";
+import { HEART_WORDS, HEART_WORD_COUNT } from "@/lib/words/heart-words";
+import { attachVoiceLoader, ensureSpeechUnlocked, speak } from "@/lib/audio/speak";
+import { HeartWordCard } from "./HeartWordCard";
+import { HeartWordGate } from "./HeartWordGate";
+import { SettingsToggles } from "./SettingsToggles";
 
 type Phase = "title" | "playing" | "win" | "lose" | "submitted";
 
@@ -16,6 +26,34 @@ type FsDocument = Document & {
 type FsElement = HTMLDivElement & {
   webkitRequestFullscreen?: () => Promise<void>;
 };
+
+type ActiveCard =
+  | { kind: "heart"; stone: HeartStone }
+  | { kind: "label"; word: string }
+  | null;
+
+const LABELS_KEY = "hk-game-labels-on";
+const SPEECH_KEY = "hk-game-speech-on";
+
+function readBool(key: string, fallback: boolean): boolean {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return fallback;
+    return raw === "1";
+  } catch {
+    return fallback;
+  }
+}
+
+function writeBool(key: string, value: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    /* noop */
+  }
+}
 
 export function SuperDogWorld() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -34,6 +72,43 @@ export function SuperDogWorld() {
   const [isFs, setIsFs] = useState(false);
   const [cssFs, setCssFs] = useState(false);
 
+  const [labelsOn, setLabelsOn] = useState<boolean>(true);
+  const [speechOn, setSpeechOn] = useState<boolean>(true);
+  const labelsOnRef = useRef(true);
+  const speechOnRef = useRef(true);
+  const [activeCard, setActiveCard] = useState<ActiveCard>(null);
+  const [gateUiOpen, setGateUiOpen] = useState(false);
+  const [, setTickWords] = useState(0);
+
+  const setPaused = useCallback((p: boolean) => {
+    stateRef.current.paused = p;
+  }, []);
+
+  // Restore preferences on mount.
+  useEffect(() => {
+    const l = readBool(LABELS_KEY, true);
+    const s = readBool(SPEECH_KEY, true);
+    setLabelsOn(l);
+    setSpeechOn(s);
+    labelsOnRef.current = l;
+    speechOnRef.current = s;
+  }, []);
+
+  useEffect(() => {
+    labelsOnRef.current = labelsOn;
+    writeBool(LABELS_KEY, labelsOn);
+  }, [labelsOn]);
+
+  useEffect(() => {
+    speechOnRef.current = speechOn;
+    writeBool(SPEECH_KEY, speechOn);
+  }, [speechOn]);
+
+  // Voices for Web Speech API
+  useEffect(() => {
+    return attachVoiceLoader();
+  }, []);
+
   const requestFullscreen = useCallback(async () => {
     const el = cardRef.current as FsElement | null;
     if (!el) return;
@@ -41,7 +116,6 @@ export function SuperDogWorld() {
     if (typeof fn === "function") {
       try {
         await fn.call(el);
-        // Try to lock landscape — silently fails on browsers/devices that don't allow it.
         const orientation = (screen.orientation as ScreenOrientation & {
           lock?: (o: string) => Promise<void>;
         } | undefined);
@@ -50,7 +124,7 @@ export function SuperDogWorld() {
         }
         return;
       } catch {
-        /* fall through to CSS fallback */
+        /* fall through */
       }
     }
     setCssFs(true);
@@ -84,11 +158,84 @@ export function SuperDogWorld() {
     }
   }, []);
 
+  const triggerHeartStone = useCallback((stone: HeartStone) => {
+    setPaused(true);
+    setActiveCard({ kind: "heart", stone });
+  }, [setPaused]);
+
+  const triggerOwl = useCallback(() => {
+    setPaused(true);
+    setGateUiOpen(true);
+  }, [setPaused]);
+
+  const closeHeartCard = useCallback(() => {
+    setActiveCard((current) => {
+      if (current?.kind === "heart") {
+        const stone = current.stone;
+        // Mark collected + register the word
+        const live = stateRef.current.heartStones.find((s) => s.id === stone.id);
+        if (live && !live.collected) {
+          live.collected = true;
+          stateRef.current.collectedWords[live.word] = true;
+          // Sparkle particles via direct push (engine spawnParticles imported via state mutation)
+          for (let i = 0; i < 16; i++) {
+            stateRef.current.particles.push({
+              x: live.x + live.w / 2,
+              y: live.y + live.h / 2,
+              vx: (Math.random() - 0.5) * 6,
+              vy: (Math.random() - 0.5) * 6 - 2,
+              life: 36 + Math.random() * 16,
+              color: i % 2 === 0 ? "#FFE066" : "#E97AC1",
+              size: 3 + Math.random() * 4,
+            });
+          }
+          setTickWords((n) => n + 1);
+        }
+      }
+      return null;
+    });
+    setPaused(false);
+  }, [setPaused]);
+
+  const closeLabelCard = useCallback(() => {
+    setActiveCard(null);
+    setPaused(false);
+  }, [setPaused]);
+
+  const closeGate = useCallback(() => {
+    setGateUiOpen(false);
+    // Reset trigger so player can re-approach owl
+    stateRef.current.owl.triggered = false;
+    setPaused(false);
+  }, [setPaused]);
+
+  const openGate = useCallback(() => {
+    stateRef.current.gateOpen = true;
+    setGateUiOpen(false);
+    // Big celebratory burst
+    for (let i = 0; i < 60; i++) {
+      stateRef.current.particles.push({
+        x: stateRef.current.owl.x + stateRef.current.owl.w / 2,
+        y: stateRef.current.owl.y + 30,
+        vx: (Math.random() - 0.5) * 10,
+        vy: (Math.random() - 0.5) * 10 - 4,
+        life: 50 + Math.random() * 30,
+        color: ["#FFE066", "#E97AC1", "#7DC383", "#5BA8D0"][i % 4]!,
+        size: 3 + Math.random() * 4,
+      });
+    }
+    setPaused(false);
+    setTickWords((n) => n + 1);
+  }, [setPaused]);
+
   const startGame = useCallback(() => {
     setSubmitError(null);
+    setActiveCard(null);
+    setGateUiOpen(false);
     stateRef.current = createInitialState();
     setPhaseSync("playing");
     lastTimeRef.current = performance.now();
+    ensureSpeechUnlocked();
     void requestFullscreen();
 
     const loop = (t: number) => {
@@ -108,11 +255,20 @@ export function SuperDogWorld() {
             phaseRef.current = "lose";
           }
         },
+        onHeartStone: (stone) => {
+          triggerHeartStone(stone);
+        },
+        onOwl: () => {
+          triggerOwl();
+        },
       });
       const canvas = canvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext("2d");
-        if (ctx) render(ctx, state);
+        if (ctx) {
+          const targets = labelsOnRef.current ? getLabelTargets(state) : undefined;
+          render(ctx, state, { labelsOn: labelsOnRef.current, labelTargets: targets });
+        }
       }
       forceTick((n) => (n + 1) % 1_000_000);
       if (phaseRef.current === "playing") {
@@ -121,7 +277,7 @@ export function SuperDogWorld() {
     };
     stopLoop();
     rafRef.current = requestAnimationFrame(loop);
-  }, [setPhaseSync, stopLoop]);
+  }, [setPhaseSync, stopLoop, requestFullscreen, triggerHeartStone, triggerOwl]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -138,8 +294,28 @@ export function SuperDogWorld() {
         e.preventDefault();
       }
       if (phaseRef.current !== "playing") return;
+      if (stateRef.current.paused) return;
       if (e.code === "KeyF" || e.code === "KeyX") engineThrowHat(stateRef.current);
       if (e.code === "Space" || e.code === "ArrowUp") engineTryJump(stateRef.current);
+      if (e.code === "KeyE") {
+        // Speak the word for whatever is closest to the player
+        const state = stateRef.current;
+        const targets = getLabelTargets(state);
+        const px = state.player.x + state.player.w / 2;
+        const py = state.player.y + state.player.h / 2;
+        let best = null as null | { word: string; d: number };
+        for (const lt of targets) {
+          if (lt.kind === "dog") continue;
+          const tx = lt.x + lt.w / 2;
+          const ty = lt.y + lt.h / 2;
+          const d = Math.hypot(tx - px, ty - py);
+          if (!best || d < best.d) best = { word: lt.word, d };
+        }
+        if (best) {
+          setPaused(true);
+          setActiveCard({ kind: "label", word: best.word });
+        }
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       keysRef.current[e.code] = false;
@@ -150,7 +326,7 @@ export function SuperDogWorld() {
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
     };
-  }, []);
+  }, [setPaused]);
 
   useEffect(() => () => stopLoop(), [stopLoop]);
 
@@ -238,7 +414,42 @@ export function SuperDogWorld() {
     engineThrowHat(stateRef.current);
   };
 
+  /** Detect taps on labelable entities (translates click→world coords, finds the topmost target). */
+  const onCanvasPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (phaseRef.current !== "playing") return;
+    if (stateRef.current.paused) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const cy = (e.clientY - rect.top) * scaleY;
+    const worldX = cx + stateRef.current.camera.x;
+    const worldY = cy;
+    // Test heart stones first — tapping speaks the word but does NOT collect.
+    for (const s of stateRef.current.heartStones) {
+      if (s.collected) continue;
+      if (worldX >= s.x - 6 && worldX <= s.x + s.w + 6 && worldY >= s.y - 28 && worldY <= s.y + s.h) {
+        setPaused(true);
+        setActiveCard({ kind: "label", word: s.word });
+        return;
+      }
+    }
+    if (!labelsOnRef.current) return;
+    // Test labelable entities
+    const targets = getLabelTargets(stateRef.current);
+    for (const lt of targets) {
+      if (worldX >= lt.x && worldX <= lt.x + lt.w && worldY >= lt.y && worldY <= lt.y + lt.h) {
+        setPaused(true);
+        setActiveCard({ kind: "label", word: lt.word });
+        return;
+      }
+    }
+  }, [setPaused]);
+
   const state = stateRef.current;
+  const collectedCount = HEART_WORDS.filter((w) => state.collectedWords[w]).length;
 
   return (
     <section className="px-4 py-10 sm:py-20 sm:px-2">
@@ -269,20 +480,32 @@ export function SuperDogWorld() {
             SUPER DOG WORLD
           </div>
           <div className="text-cream font-body mt-2 text-[0.95rem]">
-            Save the dogs! Throw your hat at evil cats, capture dog mountains, grab flags, and beat the boss!
+            Save the dogs! Collect heart words, throw your hat at evil cats, capture dog mountains, grab flags, and beat the boss!
           </div>
         </div>
 
-        <div className="flex justify-between items-center text-cream font-body font-semibold text-[1.05rem] py-2 px-3 flex-wrap gap-2">
+        <div className="flex justify-between items-center text-cream font-body font-semibold text-[0.95rem] sm:text-[1.05rem] py-2 px-2 sm:px-3 flex-wrap gap-2">
           <div className="bg-red-deep border-2 border-cream rounded-xl px-3 py-1">
-            ❤️ Lives: <span className="tabular-nums">{state.lives}</span>
+            ❤️ <span className="tabular-nums">{state.lives}</span>
           </div>
           <div className="bg-grass-deep border-2 border-cream rounded-xl px-3 py-1">
-            ⭐ Score: <span className="tabular-nums">{state.score}</span>
+            ⭐ <span className="tabular-nums">{state.score}</span>
           </div>
           <div className="bg-sky-deep border-2 border-cream rounded-xl px-3 py-1">
-            🚩 Flags: <span className="tabular-nums">{state.flagsGot}</span>/5
+            🚩 <span className="tabular-nums">{state.flagsGot}</span>/5
           </div>
+          <div
+            className="border-2 border-cream rounded-xl px-3 py-1"
+            style={{ background: collectedCount === HEART_WORD_COUNT ? "#9C3E94" : "#C254B0" }}
+          >
+            📖 <span className="tabular-nums">{collectedCount}</span>/{HEART_WORD_COUNT}
+          </div>
+          <SettingsToggles
+            labelsOn={labelsOn}
+            speechOn={speechOn}
+            onToggleLabels={() => setLabelsOn((v) => !v)}
+            onToggleSpeech={() => setSpeechOn((v) => !v)}
+          />
         </div>
 
         <div className="relative game-wrapper">
@@ -291,9 +514,34 @@ export function SuperDogWorld() {
             width={W}
             height={H}
             className={`game-canvas${phase === "playing" ? " is-playing" : ""}`}
+            onPointerDown={onCanvasPointerDown}
           />
 
-          {phase !== "playing" && (
+          {activeCard?.kind === "heart" && (
+            <HeartWordCard
+              word={activeCard.stone.word}
+              speechEnabled={speechOn}
+              onClose={closeHeartCard}
+            />
+          )}
+          {activeCard?.kind === "label" && (
+            <HeartWordCard
+              word={activeCard.word}
+              autoDismiss
+              speechEnabled={speechOn}
+              onClose={closeLabelCard}
+            />
+          )}
+          {gateUiOpen && (
+            <HeartWordGate
+              collected={state.collectedWords}
+              speechEnabled={speechOn}
+              onClose={closeGate}
+              onOpenGate={openGate}
+            />
+          )}
+
+          {phase !== "playing" && !activeCard && !gateUiOpen && (
             <div
               className="absolute inset-0 bg-ink/85 flex flex-col justify-center items-center text-white text-center rounded-[13px] p-5 z-10"
             >
@@ -305,18 +553,19 @@ export function SuperDogWorld() {
                   >
                     SUPER DOG WORLD
                   </h2>
-                  <p className="text-[1.2rem] mb-2 max-w-[500px] font-body">
+                  <p className="text-[1.2rem] mb-2 max-w-[520px] font-body">
                     The evil cat wants to turn ALL the dogs into cats!
                   </p>
-                  <p className="text-[1rem] max-w-[500px] font-body">
-                    Throw your hat 🎩 at cats to defeat them, at dog-mountains to bonk them, and at flags to score points.
+                  <p className="text-[1rem] max-w-[520px] font-body">
+                    Throw your hat 🎩 at cats, grab flags, and collect <strong>20 heart words</strong> to open the Wise Owl&apos;s gate.
                   </p>
                   <p className="text-[0.95rem] mt-3 font-body">
                     <KeyHint>←</KeyHint> <KeyHint>→</KeyHint> Move &nbsp;
                     <KeyHint>↑</KeyHint> / <KeyHint>SPACE</KeyHint> Jump &nbsp;
-                    <KeyHint>F</KeyHint> Throw Hat
+                    <KeyHint>F</KeyHint> Hat &nbsp;
+                    <KeyHint>E</KeyHint> Read
                   </p>
-                  <OverlayButton onClick={startGame}>START!</OverlayButton>
+                  <OverlayButton onClick={() => { ensureSpeechUnlocked(); startGame(); }}>START!</OverlayButton>
                 </>
               )}
               {phase === "win" && (
@@ -329,7 +578,7 @@ export function SuperDogWorld() {
                     Harry saved Super Dog World! All the dogs are safe!
                   </p>
                   <p className="text-sun text-[1.1rem] mb-3 font-body">
-                    Final Score: {state.score}
+                    Final Score: {state.score} · Heart Words: {collectedCount}/{HEART_WORD_COUNT}
                   </p>
                   <NameForm
                     name={name}
@@ -351,7 +600,7 @@ export function SuperDogWorld() {
                     The cats won this time. Try again, Harry!
                   </p>
                   <p className="text-sun text-[1.1rem] mb-3 font-body">
-                    Final Score: {state.score}
+                    Final Score: {state.score} · Heart Words: {collectedCount}/{HEART_WORD_COUNT}
                   </p>
                   {state.score > 0 && (
                     <NameForm

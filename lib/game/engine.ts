@@ -1,5 +1,7 @@
 import { GRAVITY, GROUND_Y, H, W, WORLD_W } from "./constants";
-import type { EngineEvents, GameState, Keys, Rect } from "./types";
+import type { EngineEvents, GameState, HeartStone, Keys, LabelTarget, Rect } from "./types";
+
+const GATE_WALL_X = 2680;
 
 function rectOverlap(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -25,6 +27,7 @@ export function spawnParticles(state: GameState, x: number, y: number, n: number
 }
 
 export function tryJump(state: GameState) {
+  if (state.paused) return;
   const { player } = state;
   if (player.grounded) {
     player.vy = -player.jumpPower;
@@ -34,6 +37,7 @@ export function tryJump(state: GameState) {
 }
 
 export function throwHat(state: GameState) {
+  if (state.paused) return;
   const { hat, player } = state;
   if (hat.active || !player.hatOn) return;
   hat.active = true;
@@ -64,6 +68,9 @@ function hurtPlayer(state: GameState, events: EngineEvents, reset = false) {
 }
 
 export function update(state: GameState, dtRaw: number, keys: Keys, events: EngineEvents): void {
+  // Game freezes while a word card / gate / overlay is showing.
+  if (state.paused) return;
+
   const dt = Math.min(33, dtRaw);
   void dt;
 
@@ -85,6 +92,12 @@ export function update(state: GameState, dtRaw: number, keys: Keys, events: Engi
   player.x += player.vx;
   if (player.x < 0) player.x = 0;
   if (player.x + player.w > WORLD_W) player.x = WORLD_W - player.w;
+
+  // Boss-arena gate wall: until the gate is open the player can't pass.
+  if (!state.gateOpen && player.x + player.w > GATE_WALL_X) {
+    player.x = GATE_WALL_X - player.w;
+    if (player.vx > 0) player.vx = 0;
+  }
 
   player.y += player.vy;
 
@@ -137,6 +150,31 @@ export function update(state: GameState, dtRaw: number, keys: Keys, events: Engi
         hat.y += (dy / dist) * 10;
       }
     }
+  }
+
+  // Heart Word Stone collection — by player overlap or hat hit.
+  for (const s of state.heartStones) {
+    if (s.collected) continue;
+    if (rectOverlap(player, s)) {
+      events.onHeartStone?.(s);
+      return;
+    }
+    if (hat.active && circleRectHit(hat.x, hat.y, 18, s)) {
+      hat.returning = true;
+      events.onHeartStone?.(s);
+      return;
+    }
+  }
+
+  // Owl gate trigger — when player walks up to the owl on the ground.
+  if (!state.gateOpen) {
+    const dx = Math.abs(player.x + player.w / 2 - (state.owl.x + state.owl.w / 2));
+    if (dx < 90 && player.grounded && !state.owl.triggered) {
+      state.owl.triggered = true;
+      events.onOwl?.();
+      return;
+    }
+    if (dx > 240) state.owl.triggered = false;
   }
 
   if (hat.active) {
@@ -265,4 +303,30 @@ export function update(state: GameState, dtRaw: number, keys: Keys, events: Engi
   }
 
   if (player.y > H + 100) hurtPlayer(state, events, true);
+}
+
+/** Build the list of labeled entities currently in the visible camera window. */
+export function getLabelTargets(state: GameState): LabelTarget[] {
+  const list: LabelTarget[] = [];
+  const { player, hat, boss, owl } = state;
+
+  list.push({ kind: "dog", word: "dog", x: player.x, y: player.y, w: player.w, h: player.h });
+  for (const c of state.cats) {
+    if (c.alive) list.push({ kind: "cat", word: "cat", x: c.x, y: c.y, w: c.w, h: c.h });
+  }
+  if (boss.alive) {
+    list.push({ kind: "boss", word: "boss", x: boss.x, y: boss.y, w: boss.w, h: boss.h });
+  }
+  for (const m of state.dogMountains) {
+    list.push({ kind: "mountain", word: "mountain", x: m.x, y: m.y, w: m.w, h: m.h });
+  }
+  for (const f of state.flags) {
+    if (!f.got) list.push({ kind: "flag", word: "flag", x: f.x, y: f.y, w: f.w, h: f.h });
+  }
+  if (hat.active) {
+    list.push({ kind: "hat", word: "hat", x: hat.x - 16, y: hat.y - 12, w: 32, h: 24 });
+  }
+  list.push({ kind: "owl", word: "owl", x: owl.x, y: owl.y, w: owl.w, h: owl.h });
+
+  return list;
 }

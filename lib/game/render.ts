@@ -1,5 +1,7 @@
 import { GROUND_Y, H, W, WORLD_W } from "./constants";
-import type { Boss, Cat, Flag, GameState, Hat, Mountain, Player } from "./types";
+import type { Boss, Cat, Flag, GameState, Hat, HeartStone, LabelTarget, Mountain, Owl, Player } from "./types";
+
+const GATE_WALL_X_FOR_RENDER = 2680;
 
 function roundRect(
   ctx: CanvasRenderingContext2D,
@@ -426,6 +428,299 @@ function drawDogMountain(ctx: CanvasRenderingContext2D, m: Mountain) {
   ctx.restore();
 }
 
+function drawHeartStone(ctx: CanvasRenderingContext2D, s: HeartStone) {
+  if (s.collected) return;
+  const t = Date.now() / 600 + s.pulse;
+  const halo = 16 + Math.sin(t * 2) * 4;
+  const cx = s.x + s.w / 2;
+  const cy = s.y + s.h / 2;
+
+  ctx.save();
+  // Soft halo
+  const grd = ctx.createRadialGradient(cx, cy, 4, cx, cy, halo + 16);
+  grd.addColorStop(0, "rgba(255, 192, 240, 0.85)");
+  grd.addColorStop(0.5, "rgba(217, 145, 226, 0.45)");
+  grd.addColorStop(1, "rgba(217, 145, 226, 0)");
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(cx, cy, halo + 18, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Geode (hexagonal)
+  const r = 16;
+  ctx.strokeStyle = "#2D3142";
+  ctx.lineWidth = 3;
+  const facets = [
+    { x: cx, y: cy - r, c: "#FFC2E5" },
+    { x: cx + r * 0.85, y: cy - r * 0.4, c: "#E97AC1" },
+    { x: cx + r * 0.85, y: cy + r * 0.4, c: "#C254B0" },
+    { x: cx, y: cy + r, c: "#9C3E94" },
+    { x: cx - r * 0.85, y: cy + r * 0.4, c: "#C254B0" },
+    { x: cx - r * 0.85, y: cy - r * 0.4, c: "#E97AC1" },
+  ];
+  // outline
+  ctx.fillStyle = "#FFC2E5";
+  ctx.beginPath();
+  ctx.moveTo(facets[0]!.x, facets[0]!.y);
+  for (let i = 1; i < facets.length; i++) ctx.lineTo(facets[i]!.x, facets[i]!.y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // accent facets
+  ctx.fillStyle = "#E97AC1";
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(facets[0]!.x, facets[0]!.y);
+  ctx.lineTo(facets[1]!.x, facets[1]!.y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#9C3E94";
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(facets[3]!.x, facets[3]!.y);
+  ctx.lineTo(facets[4]!.x, facets[4]!.y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Floating word above
+  const wordY = s.y - 22 + Math.sin(t * 1.5) * 2;
+  ctx.font = "bold 26px 'Bagel Fat One', system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "#2D3142";
+  ctx.strokeText(s.word, cx, wordY);
+  ctx.fillStyle = "#FFE066";
+  ctx.fillText(s.word, cx, wordY);
+
+  ctx.restore();
+}
+
+function drawOwl(ctx: CanvasRenderingContext2D, owl: Owl, gateOpen: boolean) {
+  const baseX = owl.x + owl.w / 2;
+  const baseY = owl.y + owl.h;
+  const t = Date.now() / 700;
+  const wob = Math.sin(t) * 1.5;
+
+  ctx.save();
+  // Stack of books
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#2D3142";
+  const books = [
+    { y: baseY - 14, w: 70, c: "#5BA8D0" },
+    { y: baseY - 28, w: 60, c: "#E94B4B" },
+    { y: baseY - 42, w: 52, c: "#7DC383" },
+  ];
+  for (const b of books) {
+    ctx.fillStyle = b.c;
+    ctx.fillRect(baseX - b.w / 2, b.y, b.w, 14);
+    ctx.strokeRect(baseX - b.w / 2, b.y, b.w, 14);
+  }
+
+  // Owl body
+  const ox = baseX;
+  const oy = baseY - 70 + wob;
+  ctx.fillStyle = "#A47148";
+  ctx.beginPath();
+  ctx.ellipse(ox, oy + 2, 26, 30, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Lighter belly
+  ctx.fillStyle = "#F1D9B0";
+  ctx.beginPath();
+  ctx.ellipse(ox, oy + 8, 16, 20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Head
+  ctx.fillStyle = "#A47148";
+  ctx.beginPath();
+  ctx.arc(ox, oy - 24, 22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Eye discs (glasses)
+  for (const off of [-9, 9]) {
+    ctx.fillStyle = "white";
+    ctx.beginPath();
+    ctx.arc(ox + off, oy - 24, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#2D3142";
+    ctx.beginPath();
+    ctx.arc(ox + off, oy - 24, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Glasses bridge
+  ctx.beginPath();
+  ctx.moveTo(ox - 1, oy - 24);
+  ctx.lineTo(ox + 1, oy - 24);
+  ctx.stroke();
+  // Beak
+  ctx.fillStyle = "#FFB000";
+  ctx.beginPath();
+  ctx.moveTo(ox - 4, oy - 14);
+  ctx.lineTo(ox + 4, oy - 14);
+  ctx.lineTo(ox, oy - 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Tufts
+  ctx.fillStyle = "#A47148";
+  ctx.beginPath();
+  ctx.moveTo(ox - 16, oy - 36);
+  ctx.lineTo(ox - 12, oy - 50);
+  ctx.lineTo(ox - 6, oy - 34);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(ox + 6, oy - 34);
+  ctx.lineTo(ox + 12, oy - 50);
+  ctx.lineTo(ox + 16, oy - 36);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Open book in wings
+  ctx.fillStyle = "#FFF8E7";
+  ctx.beginPath();
+  ctx.moveTo(ox - 14, oy + 14);
+  ctx.lineTo(ox - 6, oy + 8);
+  ctx.lineTo(ox, oy + 12);
+  ctx.lineTo(ox + 6, oy + 8);
+  ctx.lineTo(ox + 14, oy + 14);
+  ctx.lineTo(ox + 14, oy + 22);
+  ctx.lineTo(ox, oy + 26);
+  ctx.lineTo(ox - 14, oy + 22);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(ox, oy + 12);
+  ctx.lineTo(ox, oy + 26);
+  ctx.stroke();
+  // Tiny "lines" of text on the book
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(ox - 11, oy + 16 + i * 3);
+    ctx.lineTo(ox - 3, oy + 16 + i * 3);
+    ctx.moveTo(ox + 3, oy + 16 + i * 3);
+    ctx.lineTo(ox + 11, oy + 16 + i * 3);
+    ctx.stroke();
+  }
+  ctx.lineWidth = 3;
+
+  // "Read with me!" tag if gate not yet open
+  if (!gateOpen) {
+    const labelY = oy - 70;
+    const text = "📖 read with me!";
+    ctx.font = "bold 14px 'Fredoka', system-ui, sans-serif";
+    const metrics = ctx.measureText(text);
+    const tw = metrics.width + 16;
+    const th = 22;
+    ctx.fillStyle = "#FFF8E7";
+    ctx.strokeStyle = "#2D3142";
+    ctx.lineWidth = 2;
+    roundRect(ctx, ox - tw / 2, labelY - th + 2, tw, th, 8, true, true);
+    ctx.fillStyle = "#2D3142";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, ox, labelY - th / 2 + 2);
+    // Tail pointing down
+    ctx.beginPath();
+    ctx.moveTo(ox - 4, labelY + 2);
+    ctx.lineTo(ox + 4, labelY + 2);
+    ctx.lineTo(ox, labelY + 8);
+    ctx.closePath();
+    ctx.fillStyle = "#FFF8E7";
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawGateWall(ctx: CanvasRenderingContext2D, gateOpen: boolean) {
+  if (gateOpen) return;
+  const x = GATE_WALL_X_FOR_RENDER;
+  ctx.save();
+  // Animated shimmer
+  const t = Date.now() / 400;
+  const grd = ctx.createLinearGradient(x, 0, x + 24, 0);
+  const a = 0.45 + 0.2 * Math.sin(t);
+  grd.addColorStop(0, `rgba(91, 168, 208, ${a})`);
+  grd.addColorStop(0.5, `rgba(255, 224, 102, ${a + 0.15})`);
+  grd.addColorStop(1, `rgba(91, 168, 208, ${a})`);
+  ctx.fillStyle = grd;
+  ctx.fillRect(x, 80, 24, GROUND_Y - 80);
+  ctx.strokeStyle = "#2D3142";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x, 80, 24, GROUND_Y - 80);
+  // Lock icon
+  ctx.fillStyle = "#2D3142";
+  ctx.font = "bold 20px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("🔒", x + 12, GROUND_Y - 30);
+  ctx.restore();
+}
+
+function drawLabel(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  centerX: number,
+  topY: number,
+) {
+  ctx.save();
+  ctx.font = "600 14px 'Fredoka', system-ui, sans-serif";
+  const metrics = ctx.measureText(text);
+  const padX = 10;
+  const padY = 4;
+  const w = Math.max(34, Math.ceil(metrics.width) + padX * 2);
+  const h = 22;
+  const x = centerX - w / 2;
+  const y = topY - h - 10;
+  // Body
+  ctx.fillStyle = "#FFF8E7";
+  ctx.strokeStyle = "#2D3142";
+  ctx.lineWidth = 2;
+  roundRect(ctx, x, y, w, h, 7, true, true);
+  // Tail
+  ctx.fillStyle = "#FFF8E7";
+  ctx.beginPath();
+  ctx.moveTo(centerX - 4, y + h - 0.5);
+  ctx.lineTo(centerX + 4, y + h - 0.5);
+  ctx.lineTo(centerX, y + h + 6);
+  ctx.closePath();
+  ctx.fill();
+  // re-stroke without overlapping body bottom edge
+  ctx.beginPath();
+  ctx.moveTo(centerX - 4, y + h);
+  ctx.lineTo(centerX, y + h + 6);
+  ctx.lineTo(centerX + 4, y + h);
+  ctx.stroke();
+  // Text
+  ctx.fillStyle = "#2D3142";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  void padY;
+  ctx.fillText(text, centerX, y + h / 2 + 1);
+  ctx.restore();
+}
+
+export function drawLabels(
+  ctx: CanvasRenderingContext2D,
+  targets: LabelTarget[],
+) {
+  const t = Date.now() / 1000;
+  for (const lt of targets) {
+    const cx = lt.x + lt.w / 2;
+    // Slight float
+    const yOff = Math.sin(t * 2 + cx * 0.01) * 2;
+    drawLabel(ctx, lt.word, cx, lt.y + yOff);
+  }
+}
+
 function drawFlag(ctx: CanvasRenderingContext2D, f: Flag) {
   const t = Date.now() / 150;
   ctx.save();
@@ -450,7 +745,12 @@ function drawFlag(ctx: CanvasRenderingContext2D, f: Flag) {
   ctx.restore();
 }
 
-export function render(ctx: CanvasRenderingContext2D, state: GameState) {
+export type RenderOpts = {
+  labelsOn?: boolean;
+  labelTargets?: LabelTarget[];
+};
+
+export function render(ctx: CanvasRenderingContext2D, state: GameState, opts: RenderOpts = {}) {
   ctx.fillStyle = "#FFB088";
   ctx.fillRect(0, 0, W, H);
   const grd = ctx.createLinearGradient(0, 0, 0, H);
@@ -490,10 +790,21 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState) {
 
   for (const m of state.dogMountains) drawDogMountain(ctx, m);
   for (const f of state.flags) if (!f.got) drawFlag(ctx, f);
+  // Heart word stones (in world space)
+  for (const s of state.heartStones) drawHeartStone(ctx, s);
+  // Owl gate
+  drawOwl(ctx, state.owl, state.gateOpen);
+  // Magic gate wall (renders only while closed)
+  drawGateWall(ctx, state.gateOpen);
   for (const c of state.cats) if (c.alive) drawCat(ctx, c);
   if (state.boss.alive) drawBoss(ctx, state.boss, state.player.x);
   drawPlayer(ctx, state.player);
   if (state.hat.active) drawHatProjectile(ctx, state.hat);
+
+  // Speech-bubble labels (still in world space so they follow entities)
+  if (opts.labelsOn && opts.labelTargets) {
+    drawLabels(ctx, opts.labelTargets);
+  }
 
   for (const p of state.particles) {
     ctx.fillStyle = p.color;
